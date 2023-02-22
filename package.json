@@ -1,0 +1,23 @@
+{
+	"name": "FileCompressorCompanion",
+	"version": "1.0.0",
+	"description": "Companion app for BetterDiscord FileCompressor plugin",
+	"author": "PseudoResonance",
+	"main": "index.js",
+	"bin": "index.js",
+	"pkg": {
+		"assets": [
+			"./node_modules/*"
+		]
+	},
+	"dependencies": {
+		"mime-types": "^2.1.35",
+		"progress": "^2.0.3",
+		"ws": "^8.12.1",
+		"yargs": "^17.7.0"
+	},
+	"optionalDependencies": {
+		"bufferutil": "^4.0.7",
+		"utf-8-validate": "^6.0.2"
+	}
+}

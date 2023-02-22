@@ -1,0 +1,12 @@
+# Ignore built files
+/FileCompressorCompanion-linux
+/FileCompressorCompanion-linuxstatic
+/FileCompressorCompanion-macos
+/FileCompressorCompanion-win.exe
+
+# Ignore Node files
+/node_modules/
+
+# Ignore test files
+/libraries/
+/data.json
