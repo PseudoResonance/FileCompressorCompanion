@@ -255,7 +255,7 @@ const FFmpeg = class {
 					if (code == 0) {
 						resolve(true);
 					} else {
-						reject();
+						reject('Program terminated with code: ' + code);
 					}
 					runningProcesses = runningProcesses.filter(p => p !== process);
 				});
@@ -296,7 +296,7 @@ const FFmpeg = class {
 					if (code == 0) {
 						resolve(true);
 					} else {
-						reject();
+						reject('Program terminated with code: ' + code);
 					}
 					runningProcesses = runningProcesses.filter(p => p !== process);
 				});
@@ -434,7 +434,7 @@ const MKVmerge = class {
 		}
 	}
 
-	runWithArgs(args, baseData, socketUuid) {
+	runMKVmergeWithArgs(args, baseData, socketUuid) {
 		return new Promise((resolve, reject) => {
 			if (fs.existsSync(this.mkvmerge)) {
 				console.log('Running MKVmerge ' + args.join(' '));
@@ -458,7 +458,7 @@ const MKVmerge = class {
 					if (code == 0) {
 						resolve(true);
 					} else {
-						reject();
+						reject('Program terminated with code: ' + code);
 					}
 					runningProcesses = runningProcesses.filter(p => p !== process);
 				});
@@ -475,7 +475,7 @@ const MKVmerge = class {
 		});
 	}
 
-	execWithArgs(args) {
+	execMKVmergeWithArgs(args) {
 		return new Promise((resolve, reject) => {
 			if (fs.existsSync(this.mkvmerge)) {
 				console.log('Running MKVmerge ' + args.join(' '));
@@ -546,105 +546,119 @@ async function main() {
 		connections.push(connectionInfo);
 
 		socket.on('message', async(msg) => {
-			if (!connectionInfo.uuid) {
-				connectionInfo.uuid = msg.toString();
-				socket.send(msg.toString());
-				if (startupArgs.debug)
-					console.log('Client connected with UUID: ' + msg.toString());
-			} else {
-				const data = JSON.parse(msg.toString());
-				if (data.id) {
-					switch (data.data.type) {
-					case 'tmpDir':
-						if (!this.tmpDirPath) {
-							this.tmpDirPath = path.join(osModule.tmpdir.apply(), 'filecompressor');
-						}
-						fs.mkdirSync(this.tmpDirPath, {
-							recursive: true
-						});
-						if (fs.existsSync(this.tmpDirPath)) {
+			try {
+				if (!connectionInfo.uuid) {
+					connectionInfo.uuid = msg.toString();
+					socket.send(msg.toString());
+					if (startupArgs.debug)
+						console.log('Client connected with UUID: ' + msg.toString());
+				} else {
+					const data = JSON.parse(msg.toString());
+					if (data.id) {
+						switch (data.data.type) {
+						case 'tmpDir':
+							if (!this.tmpDirPath) {
+								this.tmpDirPath = path.join(osModule.tmpdir.apply(), 'filecompressor');
+							}
+							fs.mkdirSync(this.tmpDirPath, {
+								recursive: true
+							});
+							if (fs.existsSync(this.tmpDirPath)) {
+								try {
+									fs.accessSync(this.tmpDirPath, fs.constants.R_OK | fs.constants.W_OK);
+									data.data.tmpDir = this.tmpDirPath;
+								} catch (e) {}
+							}
+							if (startupArgs.debug)
+								console.log('Client requested temp directory, found: ' + this.tmpDirPath);
+							socket.send(JSON.stringify(data));
+							break;
+						case 'mime':
+							data.data.mimetype = mime.contentType(data.data.path);
+							if (startupArgs.debug)
+								console.log('Client requested mime type of: ' + data.data.path + ' found: ' + data.data.mimetype);
+							socket.send(JSON.stringify(data));
+							break;
+						case 'appStatus':
+							switch (data.data.appName) {
+							case 'ffmpeg':
+								data.data.status = ffmpeg.checkFFmpeg();
+								break;
+							case 'ffprobe':
+								data.data.status = ffmpeg.checkFFprobe();
+								break;
+							case 'mkvmerge':
+								data.data.status = mkvmerge.checkMKVmerge();
+								break;
+							}
+							if (startupArgs.debug)
+								console.log('Client requested status of: ' + data.data.appName + ' found: ' + data.data.status);
+							socket.send(JSON.stringify(data));
+							break;
+						case 'runApp':
 							try {
-								fs.accessSync(this.tmpDirPath, fs.constants.R_OK | fs.constants.W_OK);
-								data.data.tmpDir = this.tmpDirPath;
-							} catch (e) {}
-						}
-						if (startupArgs.debug)
-							console.log('Client requested temp directory, found: ' + this.tmpDirPath);
-						socket.send(JSON.stringify(data));
-						break;
-					case 'mime':
-						data.data.mimetype = mime.contentType(data.data.path);
-						if (startupArgs.debug)
-							console.log('Client requested mime type of: ' + data.data.path + ' found: ' + data.data.mimetype);
-						socket.send(JSON.stringify(data));
-						break;
-					case 'appStatus':
-						switch (data.data.appName) {
-						case 'ffmpeg':
-							data.data.status = ffmpeg.checkFFmpeg();
-							break;
-						case 'ffprobe':
-							data.data.status = ffmpeg.checkFFprobe();
-							break;
-						case 'mkvmerge':
-							data.data.status = mkvmerge.checkMKVmerge();
-							break;
-						}
-						if (startupArgs.debug)
-							console.log('Client requested status of: ' + data.data.appName + ' found: ' + data.data.status);
-						socket.send(JSON.stringify(data));
-						break;
-					case 'runApp':
-						try {
-							const baseData = JSON.parse(JSON.stringify(data));
-							delete baseData.data.args;
-							switch (data.data.appName) {
-							case 'ffmpeg':
-								ffmpeg.runFFmpegWithArgs(data.data.args, baseData, connectionInfo.uuid);
-								break;
-							case 'ffprobe':
-								ffmpeg.runFFprobeWithArgs(data.data.args, baseData, connectionInfo.uuid);
-								break;
-							case 'mkvmerge':
-								mkvmerge.runWithArgs(data.data.args, baseData, connectionInfo.uuid);
-								break;
+								const baseData = JSON.parse(JSON.stringify(data));
+								delete baseData.data.args;
+								switch (data.data.appName) {
+								case 'ffmpeg':
+									ffmpeg.runFFmpegWithArgs(data.data.args, baseData, connectionInfo.uuid).catch(e => {
+										console.error('Error running FFmpeg', e);
+									});
+									break;
+								case 'ffprobe':
+									ffmpeg.runFFprobeWithArgs(data.data.args, baseData, connectionInfo.uuid).catch(e => {
+										console.error('Error running FFprobe', e);
+									});;
+									break;
+								case 'mkvmerge':
+									mkvmerge.runMKVmergeWithArgs(data.data.args, baseData, connectionInfo.uuid).catch(e => {
+										console.error('Error running MKVmerge', e);
+									});;
+									break;
+								}
+								data.data.result = true;
+							} catch (e) {
+								data.data.result = false;
+								data.data.error = e;
 							}
-							data.data.result = true;
-						} catch (e) {
-							data.data.result = false;
-							data.data.error = e;
-						}
-						connections.find(s => s.uuid === connectionInfo.uuid)?.socket.send(JSON.stringify(data));
-						break;
-					case 'execApp':
-						try {
-							switch (data.data.appName) {
-							case 'ffmpeg':
-								data.data.data = await ffmpeg.execFFmpegWithArgs(data.data.args);
-								break;
-							case 'ffprobe':
-								data.data.data = await ffmpeg.execFFprobeWithArgs(data.data.args);
-								break;
-							case 'mkvmerge':
-								data.data.data = await mkvmerge.execWithArgs(data.data.args);
-								break;
+							connections.find(s => s.uuid === connectionInfo.uuid)?.socket.send(JSON.stringify(data));
+							break;
+						case 'execApp':
+							try {
+								switch (data.data.appName) {
+								case 'ffmpeg':
+									data.data.data = await ffmpeg.execFFmpegWithArgs(data.data.args);
+									break;
+								case 'ffprobe':
+									data.data.data = await ffmpeg.execFFprobeWithArgs(data.data.args);
+									break;
+								case 'mkvmerge':
+									data.data.data = await mkvmerge.execMKVmergeWithArgs(data.data.args);
+									break;
+								}
+								data.data.result = true;
+							} catch (e) {
+								data.data.result = false;
+								data.data.error = e;
 							}
-							data.data.result = true;
-						} catch (e) {
-							data.data.result = false;
-							data.data.error = e;
+							connections.find(s => s.uuid === connectionInfo.uuid)?.socket.send(JSON.stringify(data));
+							break;
 						}
-						connections.find(s => s.uuid === connectionInfo.uuid)?.socket.send(JSON.stringify(data));
-						break;
 					}
 				}
+			} catch (e) {
+				console.error('Error handling client message', e);
 			}
 		});
 
 		socket.on('close', () => {
+			try {
 			if (startupArgs.debug)
 				console.log('Client connection closed with UUID: ' + connectionInfo.uuid);
 			connections = connections.filter(s => s.socket !== socket);
+			} catch (e) {
+				console.error('Error closing client connection', e);
+			}
 		});
 	});
 }
